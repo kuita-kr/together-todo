@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>함께해요 · together-todo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#fffdf7; --ink:#2b2a26; --line:#e6e0d0;
+    --todo:#ffd166; --doing:#5bc8e8; --done:#8ed081;
+    --shadow:0 6px 0 rgba(0,0,0,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Noto Sans KR',sans-serif; background:
+      radial-gradient(circle at 20% 10%, #fff7e6, transparent 40%),
+      radial-gradient(circle at 90% 80%, #eafaff, transparent 45%), var(--paper);
+    color:var(--ink); min-height:100vh; padding:24px 16px 120px;
+  }
+  h1{font-family:'Jua',sans-serif; font-size:2.4rem; text-align:center; letter-spacing:.5px}
+  h1 small{display:block; font-size:.9rem; color:#9a927e; font-family:'Noto Sans KR'; font-weight:400; margin-top:4px}
+  .board{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; max-width:980px; margin:22px auto}
+  .col{background:#fff; border:2px solid var(--line); border-radius:18px; padding:12px; min-height:280px}
+  .col h2{font-family:'Jua'; font-size:1.15rem; padding:6px 10px; border-radius:12px; margin-bottom:10px; text-align:center}
+  .col[data-c=todo] h2{background:var(--todo)}
+  .col[data-c=doing] h2{background:var(--doing)}
+  .col[data-c=done] h2{background:var(--done)}
+  .card{background:var(--paper); border:2px solid var(--line); border-radius:14px;
+    padding:10px 12px; margin-bottom:10px; box-shadow:var(--shadow); animation:pop .25s ease}
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+  .card .ko{font-family:'Jua'; font-size:1.25rem}
+  .card .en{font-size:.8rem; color:#9a927e}
+  .card .row{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap}
+  button{font-family:'Noto Sans KR'; font-weight:700; border:2px solid var(--ink);
+    background:#fff; border-radius:999px; padding:4px 10px; cursor:pointer; font-size:.78rem}
+  button:active{transform:translateY(2px)}
+  .star{border-color:#e0a800}
+  .speak{border:none; background:none; font-size:1rem; padding:0 4px; cursor:pointer}
+  .bar{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:2px solid var(--line);
+    padding:14px 16px; display:flex; gap:8px; justify-content:center; align-items:center}
+  .bar input{flex:1; max-width:520px; font-family:'Noto Sans KR'; font-size:1rem;
+    padding:10px 14px; border:2px solid var(--line); border-radius:999px; outline:none}
+  .bar .go{background:var(--doing)} .bar .mic{background:var(--todo)}
+  .toast{position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:8px 16px; border-radius:999px;
+    font-size:.9rem; opacity:0; transition:opacity .3s} .toast.show{opacity:1}
+  .hint{text-align:center; color:#9a927e; font-size:.82rem; margin-top:6px}
+</style>
+</head>
+<body>
+  <h1>함께해요 <small>together-todo · tool-calling sandbox</small></h1>
+  <div class="board" id="board"></div>
+  <p class="hint">Try typing: “손 씻기 다 했어” · “숙제 시작할게” · “내일 뭐 할까?” · “양치질 추가해줘”</p>
+
+  <div class="bar">
+    <button class="mic" id="mic" title="말하기 (speak)">🎤</button>
+    <input id="say" placeholder="여기에 말하거나 입력하세요 / say or type here…" />
+    <button class="go" id="go">보내기 ▶</button>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+const COLS = [["todo","할 일"],["doing","하는 중"],["done","끝!"]];
+
+// --- Korean Text-to-Speech via the free, built-in Web Speech API -----------
+function speak(text){
+  if(!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "ko-KR"; u.rate = 0.9;             // a touch slower for kids
+  const ko = speechSynthesis.getVoices().find(v=>v.lang==="ko-KR");
+  if(ko) u.voice = ko;
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
+
+function toast(msg){const t=document.getElementById("toast");t.textContent=msg;
+  t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1600);}
+
+function render(snap){
+  const root=document.getElementById("board"); root.innerHTML="";
+  for(const [key,label] of COLS){
+    const col=document.createElement("div"); col.className="col"; col.dataset.c=key;
+    col.innerHTML=`<h2>${label}</h2>`;
+    for(const c of snap.columns[key]){
+      const card=document.createElement("div"); card.className="card";
+      const stars = c.stars ? " " + "★".repeat(c.stars) : "";
+      card.innerHTML=`
+        <div class="ko">${c.korean}<button class="speak" title="읽어주기">🔊</button></div>
+        <div class="en">${c.english||""}${stars}</div>
+        <div class="row"></div>`;
+      card.querySelector(".speak").onclick=()=>speak(c.korean);
+      const row=card.querySelector(".row");
+      // buttons = the "tap channel": pre-resolved Actions, no LLM needed
+      if(key==="todo") row.appendChild(btn("시작 ▶",()=>tap("start",c.id)));
+      if(key==="doing") row.appendChild(btn("완료 ✓",()=>tap("complete",c.id)));
+      if(key==="done" && !c.stars)
+        for(let s=1;s<=5;s++) row.appendChild(starBtn(s,c.id));
+      col.appendChild(card);
+    }
+    root.appendChild(col);
+  }
+}
+function btn(label,fn){const b=document.createElement("button");b.textContent=label;b.onclick=fn;return b;}
+function starBtn(s,id){const b=document.createElement("button");b.className="star";b.textContent="★"+s;
+  b.onclick=()=>tap("rate",id,{stars:s});return b;}
+
+async function tap(tool,task_id,extra={}){
+  const r=await fetch("/tap",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({tool,task_id,...extra})});
+  const d=await r.json(); render(d.board);
+}
+
+async function act(text){
+  if(!text.trim()) return;
+  const r=await fetch("/act",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text})});
+  const d=await r.json(); render(d.board);
+  const a=d.action;
+  if(a.tool==="predict"){
+    const top=(d.result.ranked||[]).slice(0,3).map(x=>x.korean).join(", ");
+    toast("내일 추천: "+(top||"기록 없음")); speak("내일은 "+(top||"기록이 없어요"));
+  }else{
+    toast(`router → ${a.tool}`);            // shows the routing decision live
+    if(d.result.ok && d.result.card) speak("좋아요! "+d.result.card.korean);
+  }
+}
+
+document.getElementById("go").onclick=()=>{const i=document.getElementById("say");act(i.value);i.value="";};
+document.getElementById("say").addEventListener("keydown",e=>{if(e.key==="Enter"){act(e.target.value);e.target.value="";}});
+
+// --- Voice input: one more "channel" into the same router ------------------
+const mic=document.getElementById("mic");
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){
+  const rec=new SR(); rec.lang="ko-KR";
+  mic.onclick=()=>rec.start();
+  rec.onresult=e=>{const t=e.results[0][0].transcript; document.getElementById("say").value=t; act(t);};
+}else{ mic.disabled=true; mic.title="이 브라우저는 음성 인식을 지원하지 않습니다"; }
+
+speechSynthesis.onvoiceschanged=()=>{};   // warm up voice list
+fetch("/board").then(r=>r.json()).then(render);
+</script>
+</body>
+</html>

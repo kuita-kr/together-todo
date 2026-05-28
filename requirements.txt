@@ -1,0 +1,5 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+# No SDKs needed: Gemini is called via plain urllib (like your gemini.py).
+# Korean TTS/STT is browser-native (Web Speech API) — nothing to install.
