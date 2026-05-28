@@ -1,9 +1,14 @@
+[![status: experimental](https://github.com/GIScience/badges/raw/master/status/experimental.svg)](https://github.com/GIScience/badges#experimental)
+
+
 # together-todo — a tool-calling agent sandbox
 
 A tiny, runnable reference for the ONE pattern to internalise before the
 hackathon: **route → dispatch**. A bilingual Korean/English Kanban where a
 child's message (typed, spoken, or tapped) is routed to one of five tools that
 actually change the board.
+
+![demo wireframe](assets/draft.png)
 
 This is the action-world cousin of an adaptive **retrieval** agent: same
 classify-then-route skeleton, but the tools have **side effects** (they create
