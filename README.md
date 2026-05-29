@@ -5,6 +5,10 @@ tapped) is **routed** to a tool that changes the board, plus a **PIN-gated
 parent mode** for running the day. Built to internalise one pattern:
 **route → dispatch**.
 
+| Kids' board | Parent mode (PIN-gated) |
+|---|---|
+| ![The kid-facing board — cards conjugate by column](assets/v3-child.png) | ![Parent mode — menu memory, word bag, task bag](assets/v3-parent.png) |
+
 ## What's new in v3 — parent mode
 
 A separate access level for grown-ups. A `🔒 부모` toggle asks for a **PIN**
@@ -33,6 +37,8 @@ A separate access level for grown-ups. A `🔒 부모` toggle asks for a **PIN**
 | **Composable cards (verb recycling + tense)** | `VERBS` table + `parts()` | A card = `prefix + subject + verb`. The verb **conjugates by column**, teaching tense as the card moves: 양치 **하기** → 양치 **하는 중** → 양치 **했어!**. `하다` is recycled across 양치/숙제/정리; the prefix (`저녁`/`아침`) is recycled across 메뉴. Reversing a card rewinds its tense too. |
 | **iPad-optimised UI** | `static/index.html` | 48px touch targets, 16px inputs (no iOS zoom), safe-area insets, `viewport-fit=cover`, 3-column landscape grid, horizontal snap-scroll in portrait. Card parts render as coloured **chips** so the recycled pieces and the changing tense are visible. |
 | **Korean voice** | Web Speech API | 🔊 reads each card in the **correct tense** for its column; 🎤 voice input is one more channel into the same router. |
+
+![v2 board — composable cards moving across columns](assets/v2.png)
 
 ## The mental model (unchanged — that's the point)
 
