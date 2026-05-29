@@ -53,15 +53,27 @@ MEAL_PREFIXES = ["아침", "점심", "저녁"]
 # --- State -----------------------------------------------------------------
 _uid = itertools.count(1)
 _cid = itertools.count(1)
+_bid = itertools.count(1)
 users: dict[int, dict] = {}
 board: dict[int, dict] = {}
 history: list[dict] = []
 
+# --- Parent-side state -----------------------------------------------------
+# bag: a backlog POOL of task TEMPLATES parents curate, then assign into a kid's
+# 할 일. word_bag: prefix words parents drag onto cards. settings.routine_mode:
+# "manual" (parent taps a button) or "auto" (weekday auto-fill on board open).
+bag: dict[int, dict] = {}
+word_bag: list[str] = []
+settings: dict = {"routine_mode": "manual"}
+routine_log: set[tuple] = set()       # (owner, bag_id, date) -> already auto-filled
+parent_auth: dict = {"pin": "0000"}
+WEEKDAYS_MONFRI = {0, 1, 2, 3, 4}     # Mon..Fri (date.weekday())
+
 
 # --- Users -----------------------------------------------------------------
-def add_user(name: str, age: int) -> dict:
+def add_user(name: str, age: int, role: str = "child") -> dict:
     uid = next(_uid)
-    users[uid] = {"id": uid, "name": name, "age": int(age)}
+    users[uid] = {"id": uid, "name": name, "age": int(age), "role": role}
     return users[uid]
 
 
@@ -141,6 +153,120 @@ def infer_verb(text: str) -> str:
             if form and form in text and len(form) > best_len:
                 best, best_len = verb, len(form)
     return best
+
+
+# --- PARENT TOOLS: task bag (backlog pool) ---------------------------------
+_TEMPLATE_FIELDS = ("subject", "english", "verb", "prefix", "kind",
+                    "options", "prefix_options")
+
+
+def bag_add(subject: str, english: str = "", verb: str = "하다", prefix: str = "",
+            kind: str = "binary", options: list[str] | None = None,
+            prefix_options: list[str] | None = None, routine: bool = False) -> dict:
+    """TOOL (parent): add a reusable task TEMPLATE to the backlog pool."""
+    bid = next(_bid)
+    bag[bid] = {
+        "id": bid, "subject": subject, "english": english, "verb": verb,
+        "prefix": prefix, "kind": kind, "options": options or [],
+        "prefix_options": prefix_options or [], "routine": bool(routine),
+    }
+    return bag[bid]
+
+
+def bag_remove(bag_id: int) -> bool:
+    return bag.pop(int(bag_id), None) is not None
+
+
+def bag_list() -> list[dict]:
+    return list(bag.values())
+
+
+def assign_bag(bag_id: int, owner: int) -> dict:
+    """TOOL (parent): materialize a bag template into a kid's 할 일."""
+    t = bag.get(int(bag_id))
+    if not t:
+        return {"ok": False, "error": f"no template {bag_id}"}
+    fields = {k: t[k] for k in _TEMPLATE_FIELDS}
+    return register_task(owner, **fields)
+
+
+def assign_routine(owner: int, auto_only: bool = False) -> list[dict]:
+    """TOOL (parent): bulk-assign routine templates to a kid.
+    auto_only=True only fires on weekdays and dedups per (owner, template, day),
+    so opening the board repeatedly won't pile up duplicates."""
+    owner = int(owner)
+    today = date.today()
+    if auto_only and today.weekday() not in WEEKDAYS_MONFRI:
+        return []
+    out = []
+    for bid, t in bag.items():
+        if not t.get("routine"):
+            continue
+        key = (owner, bid, today)
+        if auto_only and key in routine_log:   # auto dedups; manual always fills
+            continue
+        routine_log.add(key)                   # mark the day so auto won't re-add
+        out.append(assign_bag(bid, owner))
+    return out
+
+
+def ensure_today(owner: int) -> list[dict]:
+    """Auto-fill today's routine when parents chose the 'auto' mode."""
+    if settings.get("routine_mode") == "auto":
+        return assign_routine(owner, auto_only=True)
+    return []
+
+
+# --- PARENT TOOLS: word bag (draggable prefixes) ---------------------------
+def words_list() -> list[str]:
+    return list(word_bag)
+
+
+def word_add(word: str) -> list[str]:
+    w = str(word).strip()
+    if w and w not in word_bag:
+        word_bag.append(w)
+    return list(word_bag)
+
+
+def word_remove(word: str) -> list[str]:
+    if word in word_bag:
+        word_bag.remove(word)
+    return list(word_bag)
+
+
+# --- PARENT TOOLS: menu memory ---------------------------------------------
+def menu_notes() -> dict:
+    """Aggregate the latest meal/choice each kid made, plus prep counts.
+    Reads completed 'choice' events from history -> "비빔밥 1 (서준), 김밥 1 (서연)"."""
+    latest: dict[tuple, dict] = {}
+    for h in history:
+        if h.get("event") == "complete" and h.get("choice"):
+            latest[(h["owner"], h["subject"])] = h      # last write wins
+    per_kid, counts = [], defaultdict(lambda: defaultdict(int))
+    for (owner, subject), h in latest.items():
+        name = users.get(owner, {}).get("name", "?")
+        per_kid.append({"name": name, "subject": subject, "choice": h["choice"]})
+        counts[h["choice"]][name] += 1
+    counts_out = [
+        {"choice": ch, "total": sum(by.values()),
+         "by": [{"name": n, "count": c} for n, c in by.items()]}
+        for ch, by in counts.items()
+    ]
+    counts_out.sort(key=lambda x: x["total"], reverse=True)
+    return {"per_kid": per_kid, "counts": counts_out}
+
+
+# --- PARENT TOOLS: PIN gate ------------------------------------------------
+def verify_pin(pin: str) -> bool:
+    return str(pin) == parent_auth["pin"]
+
+
+def set_pin(old: str, new: str) -> bool:
+    if str(old) != parent_auth["pin"] or not str(new).strip():
+        return False
+    parent_auth["pin"] = str(new).strip()
+    return True
 
 
 def start_task(task_id: int) -> dict:
@@ -232,7 +358,7 @@ def _view(c: dict) -> dict:
 
 def _remember(c: dict, event: str):
     history.append({"subject": c["subject"], "owner": c["owner"], "event": event,
-                    "stars": c["stars"], "date": date.today(),
+                    "stars": c["stars"], "choice": c.get("choice"), "date": date.today(),
                     "ts": datetime.now().isoformat(timespec="seconds")})
 
 
@@ -254,6 +380,7 @@ def _seed():
     # Two children of different ages -> age-appropriate starter cards.
     minjun = add_user("민준", 8)
     seoyeon = add_user("서연", 4)
+    add_user("부모", 0, role="parent")     # the elevated access level (PIN-gated)
     # 4-year-old: simple binary, recycling 하다 / 씻다 / 정리하다
     register_task(seoyeon["id"], "손", "Wash hands", verb="씻다")
     register_task(seoyeon["id"], "양치", "Brush teeth", verb="하다")
@@ -264,6 +391,23 @@ def _seed():
     register_task(minjun["id"], "메뉴", "Pick a meal", verb="고르다", prefix="저녁",
                   kind="choice", options=["김밥 / Gimbap", "비빔밥 / Bibimbap", "카레 / Curry"],
                   prefix_options=MEAL_PREFIXES)
+
+    # Word bag: prefix words parents can drag onto any card.
+    word_bag.extend(["아침", "점심", "저녁", "주말", "학교", "집"])
+
+    # Task bag: a ~10-item daily routine pool parents draw from.
+    bag_add("양치", "Brush teeth", verb="하다", routine=True)
+    bag_add("손", "Wash hands", verb="씻다", routine=True)
+    bag_add("장난감", "Tidy toys", verb="정리하다", routine=True)
+    bag_add("이불", "Make the bed", verb="정리하다", routine=True)
+    bag_add("물", "Drink water", verb="먹다", routine=True)
+    bag_add("숙제", "Homework", verb="하다", routine=True)
+    bag_add("책", "Read a book", verb="읽다", routine=True)
+    bag_add("가방", "Pack the bag", verb="정리하다", routine=True)
+    bag_add("일기", "Write a diary", verb="하다", routine=True)
+    bag_add("메뉴", "Pick a meal", verb="고르다", prefix="저녁", kind="choice",
+            options=["김밥 / Gimbap", "비빔밥 / Bibimbap", "카레 / Curry"],
+            prefix_options=MEAL_PREFIXES, routine=False)
 
 
 _seed()
