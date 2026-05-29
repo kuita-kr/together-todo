@@ -113,15 +113,18 @@
   .word .x{margin-left:8px; color:#b06; font-size:.85rem; cursor:pointer}
   .card.drop{outline:3px dashed var(--doing); outline-offset:2px}
 
-  /* task bag */
-  .tasks{display:flex; flex-wrap:wrap; gap:10px}
+  /* task bag — uniform grid so cards never balloon to content / overlap */
+  .tasks{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; align-items:start}
   .task{background:var(--paper); border:2px solid var(--line); border-radius:14px; padding:10px 12px;
-    display:flex; flex-direction:column; gap:8px; min-width:150px}
-  .task .ttl{font-family:'Jua'; font-size:1.05rem}
+    display:flex; flex-direction:column; gap:8px; min-width:0}
+  .task .ttl{font-family:'Jua'; font-size:1.05rem; word-break:keep-all}
   .task .ttl .tag{font-family:'Noto Sans KR'; font-size:.68rem; font-weight:700; color:#fff;
     background:var(--done); border-radius:8px; padding:2px 6px; margin-left:6px}
   .task .en{margin:0}
-  .task .assign{display:flex; gap:6px; flex-wrap:wrap}
+  .task .assign{display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:auto;
+    padding-top:8px; border-top:1px solid var(--line)}
+  .task .assign .mini{flex:0 0 auto}
+  .task .assign .del{margin-left:auto; border-color:#c0392b; color:#c0392b}
   .add-form{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
   .add-form input{font-family:'Noto Sans KR'; font-size:16px; min-height:38px; padding:6px 12px;
     border:2px solid var(--line); border-radius:10px; outline:none}
@@ -414,7 +417,7 @@ function taskEl(t){
     b.onclick=async()=>{const d=await (await fetch(`/bag/${t.id}/assign`,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({user:k.id})})).json(); toast(`${k.name} 할 일에 추가`); if(k.id===USER) render(d.board);};
     assign.appendChild(b);});
-  const del=document.createElement("button"); del.className="mini"; del.textContent="✕"; del.title="주머니에서 삭제";
+  const del=document.createElement("button"); del.className="mini del"; del.textContent="✕"; del.title="주머니에서 삭제";
   del.onclick=async()=>{await fetch("/bag/"+t.id,{method:"DELETE"}); renderPanels();};
   assign.appendChild(del); el.appendChild(assign);
   return el;
