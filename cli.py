@@ -1,60 +1,68 @@
 """
-cli.py — study the agent in your terminal, no server, no API key.
+cli.py — study route -> dispatch in the terminal (v2). Pick a child first.
 
     python cli.py
 
-Type things a child might say (Korean or English) and watch the router pick a
-tool and the board change. This is the fastest way to *feel* route -> dispatch
-before tomorrow's meeting.
-
-Examples to try:
-    손 씻기 다 했어            -> complete
-    숙제 시작할게             -> start
-    저녁 별점 5점             -> rate
-    내일 뭐 할까?            -> predict
-    양치질 추가해줘           -> register
+Try (as 서연, age 4):     양치 했어   /   손 씻을게   /   장난감 정리했어
+Try (as 민준, age 8):     숙제 다 했어  ->  then as a parent:  숙제 아직 안 했어
+Watch the verb conjugate as a card moves columns, and 'reverse' send it back.
+Type 'switch' to change child, 'q' to quit.
 """
 
 import board
 import router
 
+LABELS = {"todo": "할 일", "doing": "하는 중", "done": "끝!"}
 
-def show():
-    snap = board.snapshot()
-    labels = {"todo": "할 일 (To do)", "doing": "하는 중 (Doing)", "done": "끝! (Done)"}
-    print("\n" + "=" * 52)
+
+def show(owner):
+    snap = board.snapshot(owner)
+    u = snap["user"]
+    print("\n" + "=" * 56)
+    print(f"  {u['name']} ({u['age']}살)")
     for col in board.COLUMNS:
         cards = snap["columns"][col]
         names = ", ".join(
-            f"{c['korean']}" + (f"★{c['stars']}" if c['stars'] else "")
-            for c in cards) or "—"
-        print(f"  {labels[col]:<20} {names}")
-    print("=" * 52)
+            c["spoken"] + (f" ★{c['stars']}" if c["stars"] else "") for c in cards) or "—"
+        print(f"  {LABELS[col]:<8} {names}")
+    print("=" * 56)
+
+
+def pick_user():
+    us = board.list_users()
+    print("누구세요? Pick a child:")
+    for u in us:
+        print(f"  {u['id']}. {u['name']} ({u['age']}살)")
+    raw = input("number > ").strip()
+    ids = {str(u["id"]): u["id"] for u in us}
+    return ids.get(raw, us[0]["id"])
 
 
 def main():
-    print("together-todo — tool-calling sandbox")
-    print("Type a child's message; 'q' to quit. (USE_GEMINI=1 to use the LLM)\n")
-    show()
+    print("together-todo — tool-calling sandbox (v2)\n")
+    owner = pick_user()
+    show(owner)
     while True:
         try:
-            utt = input("\n👧  ")
+            utt = input("\n💬  ")
         except (EOFError, KeyboardInterrupt):
             break
-        if utt.strip().lower() in {"q", "quit", "exit"}:
+        cmd = utt.strip().lower()
+        if cmd in {"q", "quit", "exit"}:
             break
-        out = router.handle(utt)
+        if cmd in {"switch", "u", "user"}:
+            owner = pick_user(); show(owner); continue
+        out = router.handle(utt, owner)
         a = out["action"]
-        print(f"   router  -> tool={a['tool']}  args="
-              f"{ {k: v for k, v in a.items() if v and k != 'tool'} }")
-        ok = out["result"].get("ok")
-        if out["result"].get("tool") == "predict":
-            ranked = out["result"]["ranked"][:3]
-            print("   predict -> " + (", ".join(
-                f"{r['korean']}({r['score']})" for r in ranked) or "no history yet"))
+        print(f"   router  -> tool={a['tool']}  "
+              f"args={ {k: v for k, v in a.items() if v and k != 'tool'} }")
+        res = out["result"]
+        if res.get("tool") == "predict":
+            top = ", ".join(f"{r['subject']}({r['score']})" for r in res["ranked"][:3])
+            print("   predict -> " + (top or "no history yet"))
         else:
-            print(f"   result  -> {'✅' if ok else '⚠️ ' + str(out['result'])}")
-        show()
+            print(f"   result  -> {'OK' if res.get('ok') else 'warn ' + str(res)}")
+        show(owner)
 
 
 if __name__ == "__main__":

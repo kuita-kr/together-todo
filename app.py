@@ -1,12 +1,7 @@
 """
-app.py — thin web layer. Matches your NHS Policy Navigator shape:
-serve a single-file frontend + a couple of JSON endpoints.
+app.py — thin web layer (v2). Every endpoint is scoped to a child (`user`).
 
-    python -m uvicorn app:app --reload     ->   http://localhost:8000
-
-The frontend is just ONE MORE CHANNEL. A tapped button and a typed/spoken
-sentence both POST to /act, which calls the same router.handle(). Swap the
-brain (rules vs Gemini) with USE_GEMINI=1 and nothing here changes.
+    python -m uvicorn app:app --reload   ->   http://localhost:8000
 """
 
 from fastapi import FastAPI
@@ -23,6 +18,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class Utterance(BaseModel):
     text: str
+    user: int
 
 
 @app.get("/")
@@ -30,30 +26,34 @@ def home():
     return FileResponse("static/index.html")
 
 
+@app.get("/users")
+def get_users():
+    return board.list_users()
+
+
 @app.get("/board")
-def get_board():
-    return board.snapshot()
+def get_board(user: int):
+    return board.snapshot(user)
 
 
 @app.post("/act")
 def act(u: Utterance):
-    """The single entry point for every channel: route -> dispatch -> state."""
-    out = router.handle(u.text)
-    out["board"] = board.snapshot()
+    """Single entry point for every channel (type/voice), scoped to a child."""
+    out = router.handle(u.text, u.user)
+    out["board"] = board.snapshot(u.user)
     return out
 
 
 @app.post("/tap")
 def tap(payload: dict):
-    """Buttons skip the LLM and call a tool directly (fast, always-correct).
-    Same dispatch target as /act — just a pre-resolved Action."""
-    tool = payload.get("tool")
-    tid = payload.get("task_id")
+    """Buttons skip the LLM: a pre-resolved Action for one child's card."""
+    tool, tid, user = payload.get("tool"), payload.get("task_id"), payload.get("user")
     fn = {
         "start": lambda: board.start_task(tid),
         "complete": lambda: board.complete_task(tid, choice=payload.get("choice")),
+        "reverse": lambda: board.reverse_task(tid),
         "rate": lambda: board.rate_task(tid, payload.get("stars", 3)),
-        "predict": board.predict_tasks,
+        "predict": lambda: board.predict_tasks(user),
     }.get(tool)
     result = fn() if fn else {"ok": False, "error": "unknown tool"}
-    return {"result": result, "board": board.snapshot()}
+    return {"result": result, "board": board.snapshot(user)}

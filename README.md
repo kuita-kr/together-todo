@@ -1,78 +1,59 @@
-[![status: experimental](https://github.com/GIScience/badges/raw/master/status/experimental.svg)](https://github.com/GIScience/badges#experimental)
+# together-todo — a tool-calling agent sandbox (v2)
 
+A bilingual Korean/English Kanban where a child's message (typed, spoken, or
+tapped) is **routed** to one of six tools that change the board. Built to
+internalise one pattern: **route → dispatch**.
 
-# together-todo — a tool-calling agent sandbox
+## What's new in v2
 
-A tiny, runnable reference for the ONE pattern to internalise before the
-hackathon: **route → dispatch**. A bilingual Korean/English Kanban where a
-child's message (typed, spoken, or tapped) is routed to one of five tools that
-actually change the board.
+| Feature | Where it lives | The idea |
+|---|---|---|
+| **Usernames + multiple children** | `board.py` users (with age) | Every card has an `owner`. Two kids (민준 8, 서연 4) seeded with age-appropriate cards. The active child is **context we pass in** — the LLM never picks the child. |
+| **Reverse / examine tool** | `reverse_task` + one dispatch row | Parent assessment: "숙제 아직 안 했어" sends a card **back** a column. Adding it was *one function + one enum value + one dispatch row* — exactly the lesson from the architecture diagram. |
+| **House glossary** | `GLOSSARY` in `board.py` | Casual phrasing maps to a card. "양치질 했어?" and "양치 했어?" both hit the `양치` card. Extend the dict with your family's terms. |
+| **Composable cards (verb recycling + tense)** | `VERBS` table + `parts()` | A card = `prefix + subject + verb`. The verb **conjugates by column**, teaching tense as the card moves: 양치 **하기** → 양치 **하는 중** → 양치 **했어!**. `하다` is recycled across 양치/숙제/정리; the prefix (`저녁`/`아침`) is recycled across 메뉴. Reversing a card rewinds its tense too. |
+| **iPad-optimised UI** | `static/index.html` | 48px touch targets, 16px inputs (no iOS zoom), safe-area insets, `viewport-fit=cover`, 3-column landscape grid, horizontal snap-scroll in portrait. Card parts render as coloured **chips** so the recycled pieces and the changing tense are visible. |
+| **Korean voice** | Web Speech API | 🔊 reads each card in the **correct tense** for its column; 🎤 voice input is one more channel into the same router. |
 
-![demo wireframe](assets/draft.png)
-
-This is the action-world cousin of an adaptive **retrieval** agent: same
-classify-then-route skeleton, but the tools have **side effects** (they create
-and move cards) instead of just fetching text.
-
-## The mental model (the ElevenLabs "agent solution overview")
+## The mental model (unchanged — that's the point)
 
 ```
-  CHANNELS            ROUTER                 TOOLS (specialist actions)
+  CHANNELS              ROUTER                  TOOLS
   tap  ─┐
-  type ─┼─►  router.handle()  ─►  register · start · complete · rate · predict
-  voice ┘    (one shared            │
-              guardrail layer)      └─ each changes the in-memory board
+  type ─┼─► router.handle(text, child) ─► register · start · complete
+  voice ┘     (shared guardrails)             reverse · rate · predict
 ```
 
-- **Channels** = input surfaces. A button tap, a typed sentence, and a spoken
-  phrase all funnel into the *same* `router.handle()`. The channel only changes
-  modality; the brain and the tools are shared.
-- **Router** = picks ONE tool and its arguments, returned as a structured
-  `Action` (Pydantic). Guardrails/tone live here once and apply to every channel.
-- **Tools** = the five functions in `board.py`. The `_dispatch` table in
-  `router.py` is the "router → specialist" arrows from the diagram.
+Add a tool = one `board.py` function + one row in `router._dispatch`. Swap the
+brain (`rule_route` ↔ `gemini_route`) or the store (in-memory → MongoDB) and
+nothing else changes.
 
 ## Files
 
-| File | What it teaches |
+| File | Role |
 |---|---|
-| `board.py` | The five **tools** + in-memory board + a no-ML frequency×recency predictor (the "learns from last week" bit). |
-| `router.py` | The new concept. `Action` schema, a **rule-based** router (offline), a **Gemini structured-output** router (real), and the **dispatch table**. |
-| `cli.py` | Study `route → dispatch` in the terminal, zero setup. |
-| `app.py` | Thin FastAPI layer (matches the NHS-navigator shape). `/act`, `/tap`, `/board`. |
-| `static/index.html` | The Kanban + text/voice input + **Korean Web Speech TTS** (free). |
+| `board.py` | Users, the six **tools**, `VERBS` conjugation table, `GLOSSARY`, parts→display/spoken composition, no-ML predictor. |
+| `router.py` | `Action` schema, **rule_route** (offline), **gemini_route** (structured output), the **dispatch table**. |
+| `cli.py` | Study route→dispatch in the terminal (pick a child, type, watch tense change). |
+| `app.py` | FastAPI: `/users`, `/board?user=`, `/act`, `/tap`. |
+| `static/index.html` | iPad-first board + voice + child switcher. |
 
-## 20-minute learning path (do this before the team meeting)
-
-1. **See it with no setup** — `pip install pydantic` then `python cli.py`.
-   Type `손 씻기 다 했어`, watch `router → complete` move the card. Read
-   `router.py` top to bottom; the dispatch table is the whole lesson.
-2. **Run the UI** — `pip install -r requirements.txt` then
-   `python -m uvicorn app:app --reload` → http://localhost:8000.
-   Tap buttons (the "tap channel"), type sentences, press 🎤 to speak Korean,
-   tap 🔊 to hear a card read aloud.
-3. **Swap the brain** — drop a free [AI Studio key](https://aistudio.google.com/apikey)
-   into `.env`, set `USE_GEMINI=1`, restart. Same board, same tools — now the
-   LLM does the routing via `responseSchema`. Notice nothing else changed.
-
-## What to bring to the meeting
-
-- The **route → dispatch** split, and *who owns what*: the LLM only chooses an
-  Action; **your code** executes side effects. That boundary is what keeps a
-  tool-calling agent safe and testable.
-- Buttons are pre-resolved Actions — fast and always-correct, so the demo's
-  backbone never depends on the LLM (or on hearing a child correctly).
-- Where the team plugs in Saturday: add a tool = add a `board.py` function + one
-  row in the dispatch table. Swap the in-memory board for MongoDB and the
-  architecture is unchanged.
-
-## Setup
+## Run
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env            # optional; runs fine without it
-python -m uvicorn app:app --reload
+python cli.py                      # offline, no key — fastest way to learn
+uvicorn app:app --reload           # http://localhost:8000
 ```
+
+Switch the brain to the LLM: put a free [AI Studio key](https://aistudio.google.com/apikey)
+in `.env`, set `USE_GEMINI=1`, restart. Same board, same tools.
+
+## Try it
+
+As **서연 (4)**: `양치 했어` · `손 씻을게` · `장난감 정리했어`
+As **민준 (8)**: `숙제 다 했어` → then as a **parent**: `숙제 아직 안 했어` (reverse)
+Either child: `내일 뭐 할까?` (per-child prediction)
 
 MIT.

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>함께해요 · together-todo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#fffdf7; --ink:#2b2a26; --line:#e6e0d0;
+    --todo:#ffd166; --doing:#5bc8e8; --done:#8ed081;
+    --subject:#2b6e85; --ending:#c47d00;
+    --tap:48px;                       /* min touch target for little fingers */
+  }
+  *{box-sizing:border-box;margin:0;padding:0; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:'Noto Sans KR',sans-serif; color:var(--ink);
+    background:
+      radial-gradient(circle at 18% 8%, #fff7e6, transparent 40%),
+      radial-gradient(circle at 92% 90%, #eafaff, transparent 45%), var(--paper);
+    padding:env(safe-area-inset-top) 20px 140px; padding-top:18px;
+    -webkit-text-size-adjust:100%; overscroll-behavior:none;
+  }
+  .head{max-width:1100px; margin:0 auto; display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+  h1{font-family:'Jua'; font-size:2rem; flex:1; min-width:160px}
+  h1 small{display:block; font-size:.8rem; color:#9a927e; font-weight:400; font-family:'Noto Sans KR'}
+
+  /* user switcher */
+  .users{display:flex; gap:8px}
+  .users button{font-family:'Jua'; font-size:1rem; min-height:var(--tap);
+    padding:8px 16px; border:2px solid var(--ink); border-radius:999px; background:#fff; cursor:pointer}
+  .users button.active{background:var(--ink); color:#fff}
+  .users .age{font-size:.7rem; opacity:.7; font-family:'Noto Sans KR'}
+
+  .board{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
+    max-width:1100px; margin:18px auto}
+  .col{background:#fff; border:2px solid var(--line); border-radius:20px; padding:14px; min-height:46vh}
+  .col h2{font-family:'Jua'; font-size:1.2rem; padding:8px; border-radius:14px; margin-bottom:12px; text-align:center}
+  .col[data-c=todo] h2{background:var(--todo)}
+  .col[data-c=doing] h2{background:var(--doing)}
+  .col[data-c=done] h2{background:var(--done)}
+
+  .card{background:var(--paper); border:2px solid var(--line); border-radius:16px;
+    padding:12px 14px; margin-bottom:12px; box-shadow:0 5px 0 rgba(0,0,0,.07); animation:pop .22s ease}
+  @keyframes pop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+
+  /* parts shown as chips — the recyclable pieces + the tense */
+  .chips{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .chip{font-family:'Jua'; font-size:1.3rem; line-height:1; padding:6px 10px; border-radius:10px}
+  .chip.prefix{background:#efe7d2}
+  .chip.subject{background:#e3f3f8; color:var(--subject)}
+  .chip.ending{background:#fdeecb; color:var(--ending)}     /* changes by column */
+  .plus{color:#bdb6a3; font-size:1.1rem}
+  .en{font-size:.82rem; color:#9a927e; margin-top:6px}
+  .en .stars{color:#e0a800}
+
+  .row{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
+  .row button{font-family:'Noto Sans KR'; font-weight:700; min-height:var(--tap);
+    border:2px solid var(--ink); background:#fff; border-radius:999px; padding:8px 14px; font-size:.92rem; cursor:pointer}
+  .row button:active{transform:translateY(2px)}
+  .row .star{min-height:40px; padding:6px 10px; border-color:#e0a800}
+  .row .back{border-color:#c0392b; color:#c0392b}      /* reverse = parent action */
+  .row .opt{background:#eafaff; border-color:var(--doing)}
+  .speak{border:none!important; background:none!important; font-size:1.2rem; padding:0 4px!important; cursor:pointer; min-height:auto!important}
+
+  /* input bar */
+  .bar{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:2px solid var(--line);
+    padding:14px 16px calc(14px + env(safe-area-inset-bottom)); display:flex; gap:10px; justify-content:center; align-items:center}
+  .bar input{flex:1; max-width:560px; font-family:'Noto Sans KR'; font-size:16px;  /* 16px stops iOS zoom */
+    min-height:var(--tap); padding:10px 16px; border:2px solid var(--line); border-radius:999px; outline:none}
+  .bar button{font-family:'Jua'; min-height:var(--tap); min-width:var(--tap);
+    border:2px solid var(--ink); border-radius:999px; padding:10px 18px; font-size:1rem; cursor:pointer}
+  .bar .go{background:var(--doing)} .bar .mic{background:var(--todo)}
+  .toast{position:fixed; bottom:92px; left:50%; transform:translateX(-50%); background:var(--ink);
+    color:#fff; padding:10px 18px; border-radius:999px; font-size:.95rem; opacity:0; transition:opacity .3s; pointer-events:none}
+  .toast.show{opacity:1}
+  .hint{max-width:1100px; margin:8px auto 0; text-align:center; color:#9a927e; font-size:.82rem}
+
+  /* iPad portrait & phones: let columns scroll horizontally, full-size taps */
+  @media (max-width:820px){
+    .board{grid-template-columns:repeat(3, 78vw); overflow-x:auto; scroll-snap-type:x mandatory;
+      -webkit-overflow-scrolling:touch; padding-bottom:8px}
+    .col{scroll-snap-align:center; min-height:40vh}
+    h1{font-size:1.6rem}
+  }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>함께해요 <small>together-todo</small></h1>
+    <div class="users" id="users"></div>
+  </div>
+  <div class="board" id="board"></div>
+  <p class="hint">말해보세요: “양치 했어” · “숙제 시작할게” · 부모: “숙제 아직 안 했어” (되돌리기) · “내일 뭐 할까?”</p>
+
+  <div class="bar">
+    <button class="mic" id="mic" title="말하기">🎤</button>
+    <input id="say" placeholder="말하거나 입력하세요 / say or type…" />
+    <button class="go" id="go">▶</button>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+const COLS=[["todo","할 일"],["doing","하는 중"],["done","끝!"]];
+let USER=null, USERS=[];
+
+function speak(text){
+  if(!window.speechSynthesis) return;
+  const u=new SpeechSynthesisUtterance(text); u.lang="ko-KR"; u.rate=0.9;
+  const ko=speechSynthesis.getVoices().find(v=>v.lang==="ko-KR"); if(ko)u.voice=ko;
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
+function toast(m){const t=document.getElementById("toast");t.textContent=m;
+  t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1700);}
+
+function renderUsers(){
+  const root=document.getElementById("users"); root.innerHTML="";
+  for(const u of USERS){
+    const b=document.createElement("button");
+    b.innerHTML=`${u.name} <span class="age">${u.age}살</span>`;
+    if(u.id===USER) b.classList.add("active");
+    b.onclick=()=>{USER=u.id; load();};
+    root.appendChild(b);
+  }
+}
+
+function cardEl(c,col){
+  const el=document.createElement("div"); el.className="card";
+  const p=c.parts;
+  const chips=document.createElement("div"); chips.className="chips";
+  if(p.prefix){chips.innerHTML+=`<span class="chip prefix">${p.prefix}</span><span class="plus">+</span>`;}
+  chips.innerHTML+=`<span class="chip subject">${p.subject}</span>`;
+  if(p.ending){chips.innerHTML+=`<span class="plus">+</span><span class="chip ending">${p.ending}</span>`;}
+  chips.innerHTML+=`<button class="speak" title="읽어주기">🔊</button>`;
+  el.appendChild(chips);
+  const stars=c.stars?` <span class="stars">${"★".repeat(c.stars)}</span>`:"";
+  el.insertAdjacentHTML("beforeend",`<div class="en">${c.english||""}${stars}</div>`);
+  el.querySelector(".speak").onclick=()=>speak(c.spoken);
+
+  const row=document.createElement("div"); row.className="row";
+  if(col==="todo") row.appendChild(btn("시작 ▶","",()=>tap("start",c.id)));
+  if(col==="doing"){
+    if(c.kind==="choice" && c.options.length){
+      c.options.forEach(o=>row.appendChild(btn(o,"opt",()=>tap("complete",c.id,{choice:o}))));
+    } else {
+      row.appendChild(btn("완료 ✓","",()=>tap("complete",c.id)));
+    }
+    row.appendChild(btn("↩︎ 되돌리기","back",()=>tap("reverse",c.id)));   // parent
+  }
+  if(col==="done"){
+    if(!c.stars) for(let s=1;s<=5;s++) row.appendChild(btn("★"+s,"star",()=>tap("rate",c.id,{stars:s})));
+    row.appendChild(btn("↩︎ 다시","back",()=>tap("reverse",c.id)));        // parent
+  }
+  el.appendChild(row);
+  return el;
+}
+function btn(label,cls,fn){const b=document.createElement("button");if(cls)b.className=cls;b.textContent=label;b.onclick=fn;return b;}
+
+function render(snap){
+  const root=document.getElementById("board"); root.innerHTML="";
+  for(const [key,label] of COLS){
+    const col=document.createElement("div"); col.className="col"; col.dataset.c=key;
+    col.innerHTML=`<h2>${label}</h2>`;
+    snap.columns[key].forEach(c=>col.appendChild(cardEl(c,key)));
+    root.appendChild(col);
+  }
+}
+
+async function tap(tool,task_id,extra={}){
+  const r=await fetch("/tap",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({tool,task_id,user:USER,...extra})});
+  const d=await r.json(); render(d.board);
+  if(d.result.ok && d.result.card) speak(d.result.card.spoken);   // hear the new tense
+}
+async function act(text){
+  if(!text.trim())return;
+  const r=await fetch("/act",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({text,user:USER})});
+  const d=await r.json(); render(d.board);
+  const a=d.action;
+  if(a.tool==="predict"){
+    const top=(d.result.ranked||[]).slice(0,3).map(x=>x.subject).join(", ");
+    toast("내일 추천: "+(top||"기록 없음")); speak("내일은 "+(top||"기록이 없어요"));
+  } else {
+    toast(`router → ${a.tool}`);
+    if(d.result.ok && d.result.card) speak(d.result.card.spoken);
+  }
+}
+
+async function load(){
+  renderUsers();
+  const r=await fetch("/board?user="+USER); render(await r.json());
+}
+
+document.getElementById("go").onclick=()=>{const i=document.getElementById("say");act(i.value);i.value="";};
+document.getElementById("say").addEventListener("keydown",e=>{if(e.key==="Enter"){act(e.target.value);e.target.value="";}});
+
+const mic=document.getElementById("mic");
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){const rec=new SR(); rec.lang="ko-KR"; mic.onclick=()=>rec.start();
+  rec.onresult=e=>{const t=e.results[0][0].transcript; document.getElementById("say").value=t; act(t);};
+}else{mic.disabled=true;}
+speechSynthesis && (speechSynthesis.onvoiceschanged=()=>{});
+
+// boot: load users, default to first child
+fetch("/users").then(r=>r.json()).then(us=>{USERS=us; USER=us[0].id; load();});
+</script>
+</body>
+</html>
