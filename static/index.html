@@ -83,6 +83,50 @@
   .toast.show{opacity:1}
   .hint{max-width:1100px; margin:8px auto 0; text-align:center; color:#9a927e; font-size:.82rem}
 
+  /* parent mode */
+  .parent-toggle{font-family:'Jua'; font-size:.95rem; min-height:var(--tap);
+    padding:8px 14px; border:2px solid var(--ink); border-radius:999px; background:#fff; cursor:pointer}
+  .parent-toggle.on{background:var(--ink); color:#fff}
+  .panels{max-width:1100px; margin:14px auto 0; display:flex; flex-direction:column; gap:16px}
+  .panel{background:#fff; border:2px solid var(--line); border-radius:20px; padding:16px}
+  .panel h3{font-family:'Jua'; font-size:1.05rem; margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .panel h3 .sub{font-family:'Noto Sans KR'; font-weight:400; font-size:.78rem; color:#9a927e}
+  .panel .spacer{flex:1}
+  .panel .mini{font-family:'Noto Sans KR'; font-weight:700; min-height:38px; padding:6px 12px;
+    border:2px solid var(--ink); background:#fff; border-radius:999px; font-size:.85rem; cursor:pointer}
+  .panel .mini.primary{background:var(--todo)}
+  .panel .mini.on{background:var(--doing)}
+
+  /* menu notes */
+  .notes-kids{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px}
+  .note{background:var(--paper); border:2px solid var(--line); border-radius:12px; padding:6px 12px; font-size:.9rem}
+  .note b{color:var(--subject)}
+  .counts{display:flex; flex-wrap:wrap; gap:8px}
+  .count{background:#fdeecb; border-radius:12px; padding:6px 12px; font-size:.95rem; font-weight:700; color:var(--ending)}
+  .count .who{font-weight:400; color:#9a927e; font-size:.8rem}
+
+  /* word bag (draggable) */
+  .bag{display:flex; flex-wrap:wrap; gap:8px}
+  .word{font-family:'Jua'; font-size:1.15rem; padding:8px 14px; border-radius:12px; background:#efe7d2;
+    border:2px solid #c9b27a; cursor:grab; user-select:none; position:relative}
+  .word:active{cursor:grabbing}
+  .word .x{margin-left:8px; color:#b06; font-size:.85rem; cursor:pointer}
+  .card.drop{outline:3px dashed var(--doing); outline-offset:2px}
+
+  /* task bag */
+  .tasks{display:flex; flex-wrap:wrap; gap:10px}
+  .task{background:var(--paper); border:2px solid var(--line); border-radius:14px; padding:10px 12px;
+    display:flex; flex-direction:column; gap:8px; min-width:150px}
+  .task .ttl{font-family:'Jua'; font-size:1.05rem}
+  .task .ttl .tag{font-family:'Noto Sans KR'; font-size:.68rem; font-weight:700; color:#fff;
+    background:var(--done); border-radius:8px; padding:2px 6px; margin-left:6px}
+  .task .en{margin:0}
+  .task .assign{display:flex; gap:6px; flex-wrap:wrap}
+  .add-form{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  .add-form input{font-family:'Noto Sans KR'; font-size:16px; min-height:38px; padding:6px 12px;
+    border:2px solid var(--line); border-radius:10px; outline:none}
+  .add-form input.s{width:90px}
+
   /* iPad portrait & phones: let columns scroll horizontally, full-size taps */
   @media (max-width:820px){
     .board{grid-template-columns:repeat(3, 78vw); overflow-x:auto; scroll-snap-type:x mandatory;
@@ -96,9 +140,12 @@
   <div class="head">
     <h1>함께해요 <small>together-todo</small></h1>
     <div class="users" id="users"></div>
+    <button class="parent-toggle" id="parentBtn" title="부모 모드">🔒 부모</button>
   </div>
   <div class="board" id="board"></div>
   <p class="hint">말해보세요: “양치 했어” · “숙제 시작할게” · 부모: “숙제 아직 안 했어” (되돌리기) · “내일 뭐 할까?”</p>
+
+  <div class="panels" id="panels" hidden></div>
 
   <div class="bar">
     <button class="mic" id="mic" title="말하기">🎤</button>
@@ -109,7 +156,8 @@
 
 <script>
 const COLS=[["todo","할 일"],["doing","하는 중"],["done","끝!"]];
-let USER=null, USERS=[];
+let USER=null, USERS=[], PARENT=false;
+const kids=()=>USERS.filter(u=>(u.role||"child")!=="parent");   // board owners only
 
 function speak(text){
   if(!window.speechSynthesis) return;
@@ -122,7 +170,7 @@ function toast(m){const t=document.getElementById("toast");t.textContent=m;
 
 function renderUsers(){
   const root=document.getElementById("users"); root.innerHTML="";
-  for(const u of USERS){
+  for(const u of kids()){
     const b=document.createElement("button");
     b.innerHTML=`${u.name} <span class="age">${u.age}살</span>`;
     if(u.id===USER) b.classList.add("active");
@@ -138,7 +186,8 @@ function renderUsers(){
 
 async function refreshUsers(preferId){
   USERS=await (await fetch("/users")).json();
-  USER=(USERS.find(u=>u.id===preferId)||USERS[0]||{}).id ?? null;
+  const list=kids();
+  USER=(list.find(u=>u.id===preferId)||list[0]||{}).id ?? null;
   if(USER==null){ document.getElementById("users").innerHTML=""; document.getElementById("board").innerHTML=""; addUser(); return; }
   load();
 }
@@ -173,6 +222,11 @@ async function editUser(){
 
 function cardEl(c,col){
   const el=document.createElement("div"); el.className="card";
+  // drop a word from the 낱말 주머니 onto any card to set its prefix (parent)
+  el.ondragover=e=>{if(PARENT){e.preventDefault(); el.classList.add("drop");}};
+  el.ondragleave=()=>el.classList.remove("drop");
+  el.ondrop=e=>{e.preventDefault(); el.classList.remove("drop");
+    const w=e.dataTransfer.getData("text/plain"); if(w) tap("set_prefix",c.id,{prefix:w});};
   const p=c.parts;
   const chips=document.createElement("div"); chips.className="chips";
   const swappable=(c.prefix_options||[]).length>0;
@@ -248,6 +302,122 @@ async function act(text){
 async function load(){
   renderUsers();
   const r=await fetch("/board?user="+USER); render(await r.json());
+  renderPanels();
+}
+
+// ---- parent mode ---------------------------------------------------------
+const parentBtn=document.getElementById("parentBtn");
+parentBtn.onclick=async()=>{
+  if(PARENT){ PARENT=false; updateParentBtn(); renderPanels(); return; }
+  const pin=prompt("부모 PIN / Parent PIN (기본 0000)"); if(pin===null) return;
+  const r=await fetch("/parent/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin})});
+  if(!(await r.json()).ok){ toast("PIN이 맞지 않아요"); return; }
+  PARENT=true; updateParentBtn(); renderPanels();
+};
+function updateParentBtn(){ parentBtn.textContent=(PARENT?"🔓":"🔒")+" 부모"; parentBtn.classList.toggle("on",PARENT); }
+
+function panelEl(title,sub){
+  const el=document.createElement("div"); el.className="panel";
+  el.innerHTML=`<h3>${title} <span class="sub">${sub}</span></h3>`;
+  return el;
+}
+
+async function renderPanels(){
+  const root=document.getElementById("panels"); root.hidden=!PARENT;
+  if(!PARENT){ root.innerHTML=""; return; }
+  const [notes,words,items,settings]=await Promise.all([
+    fetch("/notes").then(r=>r.json()),
+    fetch("/words").then(r=>r.json()),
+    fetch("/bag").then(r=>r.json()),
+    fetch("/settings").then(r=>r.json()),
+  ]);
+  root.innerHTML="";
+  root.appendChild(notesPanel(notes));   // notes between board and bags (as requested)
+  root.appendChild(wordPanel(words));
+  root.appendChild(bagPanel(items,settings));
+}
+
+function notesPanel(n){
+  const el=panelEl("📝 메뉴 메모","아이들이 고른 메뉴 / what each child chose");
+  const row=document.createElement("div"); row.className="notes-kids";
+  if(!n.per_kid.length) row.innerHTML='<span class="note">아직 고른 메뉴가 없어요</span>';
+  n.per_kid.forEach(k=>{const d=document.createElement("div"); d.className="note";
+    d.innerHTML=`<b>${k.name}</b> · ${k.choice}`; row.appendChild(d);});
+  el.appendChild(row);
+  const counts=document.createElement("div"); counts.className="counts";
+  n.counts.forEach(c=>{const who=c.by.map(b=>`${b.name} ${b.count}`).join(", ");
+    const d=document.createElement("div"); d.className="count";
+    d.innerHTML=`${c.choice} <span class="who">×${c.total} (${who})</span>`; counts.appendChild(d);});
+  el.appendChild(counts);
+  return el;
+}
+
+function wordPanel(words){
+  const el=panelEl("🏷️ 낱말 주머니","카드 위로 끌어다 놓으세요 / drag a word onto a card");
+  const bag=document.createElement("div"); bag.className="bag";
+  words.forEach(w=>{
+    const chip=document.createElement("div"); chip.className="word"; chip.draggable=true;
+    chip.innerHTML=`${w}<span class="x" title="삭제">✕</span>`;
+    chip.ondragstart=e=>e.dataTransfer.setData("text/plain",w);
+    chip.querySelector(".x").onclick=async ev=>{ev.stopPropagation();
+      await fetch("/words/"+encodeURIComponent(w),{method:"DELETE"}); renderPanels();};
+    bag.appendChild(chip);
+  });
+  el.appendChild(bag);
+  const form=document.createElement("div"); form.className="add-form";
+  const inp=document.createElement("input"); inp.placeholder="새 낱말 / new word";
+  const add=document.createElement("button"); add.className="mini primary"; add.textContent="➕ 추가";
+  add.onclick=async()=>{const v=inp.value.trim(); if(!v)return;
+    await fetch("/words",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({word:v})}); renderPanels();};
+  form.append(inp,add); el.appendChild(form);
+  return el;
+}
+
+function bagPanel(items,settings){
+  const el=panelEl("🎒 할 일 주머니","아이에게 보내거나 루틴을 채워요 / assign or fill the routine");
+  const head=el.querySelector("h3");
+  head.insertAdjacentHTML("beforeend",'<span class="spacer"></span>');
+  const auto=settings.routine_mode==="auto";
+  const mode=document.createElement("button"); mode.className="mini"+(auto?" on":"");
+  mode.textContent=auto?"모드: 자동(평일)":"모드: 수동";
+  mode.title="자동: 평일에 보드를 열면 루틴이 채워져요";
+  mode.onclick=async()=>{await fetch("/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({routine_mode:auto?"manual":"auto"})}); renderPanels();};
+  const fill=document.createElement("button"); fill.className="mini primary"; fill.textContent="오늘 할 일 채우기";
+  fill.onclick=async()=>{const d=await (await fetch("/bag/assign-routine",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({user:USER})})).json(); toast(`${d.assigned}개 추가됨`); render(d.board);};
+  head.append(mode,fill);
+  const tasks=document.createElement("div"); tasks.className="tasks";
+  items.forEach(t=>tasks.appendChild(taskEl(t)));
+  el.appendChild(tasks);
+  // add a new template to the bag
+  const form=document.createElement("div"); form.className="add-form";
+  const sub=document.createElement("input"); sub.placeholder="할 일 / task (예: 양치)";
+  const en=document.createElement("input"); en.placeholder="English";
+  const vb=document.createElement("input"); vb.className="s"; vb.placeholder="동사(하다)";
+  const add=document.createElement("button"); add.className="mini primary"; add.textContent="➕ 주머니에 추가";
+  add.onclick=async()=>{const subject=sub.value.trim(); if(!subject)return;
+    await fetch("/bag",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({subject,english:en.value.trim(),verb:vb.value.trim()||"하다",routine:true})});
+    renderPanels();};
+  form.append(sub,en,vb,add); el.appendChild(form);
+  return el;
+}
+
+function taskEl(t){
+  const el=document.createElement("div"); el.className="task";
+  el.insertAdjacentHTML("beforeend",
+    `<div class="ttl">${t.prefix?t.prefix+" ":""}${t.subject}${t.routine?'<span class="tag">루틴</span>':''}</div>`+
+    (t.english?`<div class="en">${t.english}</div>`:""));
+  const assign=document.createElement("div"); assign.className="assign";
+  kids().forEach(k=>{const b=document.createElement("button"); b.className="mini"; b.textContent="➕ "+k.name;
+    b.onclick=async()=>{const d=await (await fetch(`/bag/${t.id}/assign`,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({user:k.id})})).json(); toast(`${k.name} 할 일에 추가`); if(k.id===USER) render(d.board);};
+    assign.appendChild(b);});
+  const del=document.createElement("button"); del.className="mini"; del.textContent="✕"; del.title="주머니에서 삭제";
+  del.onclick=async()=>{await fetch("/bag/"+t.id,{method:"DELETE"}); renderPanels();};
+  assign.appendChild(del); el.appendChild(assign);
+  return el;
 }
 
 document.getElementById("go").onclick=()=>{const i=document.getElementById("say");act(i.value);i.value="";};

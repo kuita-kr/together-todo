@@ -57,8 +57,96 @@ def remove_user(uid: int):
     return {"ok": board.delete_user(uid)}
 
 
+# --- Parent: task bag (backlog pool) ---------------------------------------
+class BagItem(BaseModel):
+    subject: str
+    english: str = ""
+    verb: str = "하다"
+    prefix: str = ""
+    kind: str = "binary"
+    options: list[str] = []
+    prefix_options: list[str] = []
+    routine: bool = False
+
+
+@app.get("/bag")
+def get_bag():
+    return board.bag_list()
+
+
+@app.post("/bag")
+def add_bag(item: BagItem):
+    return board.bag_add(**item.model_dump())
+
+
+@app.delete("/bag/{bid}")
+def del_bag(bid: int):
+    return {"ok": board.bag_remove(bid)}
+
+
+@app.post("/bag/{bid}/assign")
+def assign_bag(bid: int, payload: dict):
+    """Materialize one template into a child's 할 일."""
+    res = board.assign_bag(bid, payload.get("user"))
+    return {"result": res, "board": board.snapshot(payload.get("user"))}
+
+
+@app.post("/bag/assign-routine")
+def assign_routine(payload: dict):
+    """Manual bulk-fill: drop every routine template into a child's 할 일."""
+    user = payload.get("user")
+    assigned = board.assign_routine(user, auto_only=False)
+    return {"assigned": len(assigned), "board": board.snapshot(user)}
+
+
+# --- Parent: word bag (draggable prefixes) ---------------------------------
+@app.get("/words")
+def get_words():
+    return board.words_list()
+
+
+@app.post("/words")
+def add_word(payload: dict):
+    return board.word_add(payload.get("word", ""))
+
+
+@app.delete("/words/{word}")
+def del_word(word: str):
+    return board.word_remove(word)
+
+
+# --- Parent: menu memory + settings + PIN ----------------------------------
+@app.get("/notes")
+def get_notes():
+    return board.menu_notes()
+
+
+@app.get("/settings")
+def get_settings():
+    return board.settings
+
+
+@app.post("/settings")
+def set_settings(payload: dict):
+    mode = payload.get("routine_mode")
+    if mode in ("manual", "auto"):
+        board.settings["routine_mode"] = mode
+    return board.settings
+
+
+@app.post("/parent/verify")
+def parent_verify(payload: dict):
+    return {"ok": board.verify_pin(payload.get("pin", ""))}
+
+
+@app.post("/parent/pin")
+def parent_pin(payload: dict):
+    return {"ok": board.set_pin(payload.get("old", ""), payload.get("new", ""))}
+
+
 @app.get("/board")
 def get_board(user: int):
+    board.ensure_today(user)          # auto-fill today's routine if mode == "auto"
     return board.snapshot(user)
 
 

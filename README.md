@@ -1,8 +1,27 @@
-# together-todo — a tool-calling agent sandbox (v2)
+# together-todo — a tool-calling agent sandbox (v3)
 
 A bilingual Korean/English Kanban where a child's message (typed, spoken, or
-tapped) is **routed** to one of six tools that change the board. Built to
-internalise one pattern: **route → dispatch**.
+tapped) is **routed** to a tool that changes the board, plus a **PIN-gated
+parent mode** for running the day. Built to internalise one pattern:
+**route → dispatch**.
+
+## What's new in v3 — parent mode
+
+A separate access level for grown-ups. A `🔒 부모` toggle asks for a **PIN**
+(default `0000`) and reveals three panels stacked under the board.
+
+| Feature | Where it lives | The idea |
+|---|---|---|
+| **Parent access level (PIN)** | `parent_auth` in `board.py`, `/parent/verify` | A `role` on every user (`child`/`parent`); the kid switcher shows children only. Parent panels stay hidden until the PIN unlocks them — kids can't wander in. |
+| **Task bag (backlog pool)** | `bag` + `bag_*` tools, `/bag*` | A pool of reusable task **templates** parents curate, then assign into a kid's 할 일 with one tap (`➕ 민준 / ➕ 서연`). Seeded with a 10-item daily routine. |
+| **Routine: manual *or* auto** | `assign_routine`, `ensure_today`, `settings` | `오늘 할 일 채우기` bulk-fills on demand (manual), or flip to **auto** and weekday routines fill themselves when the board opens. Deduped per day so reopening never piles up. |
+| **Word bag (drag-and-drop)** | `word_bag` + `/words`, `set_prefix` tool | Draggable prefix words (아침/점심/저녁/주말/학교/집). Drag one onto **any** card to swap its prefix — `저녁 메뉴 고르기` → `주말 메뉴 고르기` — subject + verb untouched. (Tapping the prefix chip still cycles, for kids.) |
+| **Menu-memory notes** | `menu_notes()` + `/notes` | When a kid completes a choice card, parents see who picked what, with prep counts across kids: **비빔밥 ×1 (민준) · 김밥 ×1 (서연)**. |
+
+> Also fixed since v2: an unmatched spoken chore (e.g. `양치 했어` for a kid with
+> no 양치 card) now **auto-creates the card in 할 일** instead of erroring;
+> prefixes became their own swappable part; and parents can add/edit/delete
+> children inline (`➕`/`✏️`).
 
 ## What's new in v2
 
@@ -28,15 +47,20 @@ Add a tool = one `board.py` function + one row in `router._dispatch`. Swap the
 brain (`rule_route` ↔ `gemini_route`) or the store (in-memory → MongoDB) and
 nothing else changes.
 
+**Parent actions skip the brain.** The bag, word bag, notes and PIN are
+deterministic grown-up operations, so they're plain REST endpoints calling the
+same `board.py` tools directly (`/tap` already does this for buttons). No
+routing, no guardrails needed — there's nothing to interpret.
+
 ## Files
 
 | File | Role |
 |---|---|
-| `board.py` | Users, the six **tools**, `VERBS` conjugation table, `GLOSSARY`, parts→display/spoken composition, no-ML predictor. |
-| `router.py` | `Action` schema, **rule_route** (offline), **gemini_route** (structured output), the **dispatch table**. |
+| `board.py` | Users (with `role`), the kid **tools** + parent tools (task **bag**, **word_bag**, `set_prefix`, `menu_notes`, routine fill, PIN), `VERBS` conjugation table, `GLOSSARY`, parts→display/spoken composition, no-ML predictor. |
+| `router.py` | `Action` schema, **rule_route** (offline, auto-creates unmatched chores), **gemini_route** (structured output), the **dispatch table**. |
 | `cli.py` | Study route→dispatch in the terminal (pick a child, type, watch tense change). |
-| `app.py` | FastAPI: `/users`, `/board?user=`, `/act`, `/tap`. |
-| `static/index.html` | iPad-first board + voice + child switcher. |
+| `app.py` | FastAPI. Kids: `/board?user=`, `/act`, `/tap`. Users: `GET/POST/PATCH/DELETE /users`. Parent: `/bag*`, `/words`, `/notes`, `/settings`, `/parent/verify`, `/parent/pin`. |
+| `static/index.html` | iPad-first board + voice + child switcher, plus PIN-gated parent panels (menu notes · word bag · task bag) and word→card drag-and-drop. |
 
 ## Run
 
@@ -55,5 +79,11 @@ in `.env`, set `USE_GEMINI=1`, restart. Same board, same tools.
 As **서연 (4)**: `양치 했어` · `손 씻을게` · `장난감 정리했어`
 As **민준 (8)**: `숙제 다 했어` → then as a **parent**: `숙제 아직 안 했어` (reverse)
 Either child: `내일 뭐 할까?` (per-child prediction)
+Try a chore with no card yet — `물 마셨어` — it lands in 할 일 automatically.
+
+**As a parent:** tap `🔒 부모`, enter PIN `0000`. Then:
+- drag `저녁` from the 낱말 주머니 onto a card to swap its prefix;
+- assign a 할 일 주머니 template to a child, or hit `오늘 할 일 채우기` for the whole routine (flip 모드: 수동 ↔ 자동);
+- let a child pick a meal, then watch the 메뉴 메모 panel tally it.
 
 MIT.
