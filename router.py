@@ -24,17 +24,32 @@ class Action(BaseModel):
     task: Optional[str] = Field(None, description="Korean task subject or id")
     stars: Optional[int] = Field(None, ge=1, le=5)
     choice: Optional[str] = None
-    subject: Optional[str] = None   # for register
+    subject: Optional[str] = None   # for register (also the auto-create fallback)
     english: Optional[str] = None   # for register
     verb: Optional[str] = None      # for register (하다/씻다/...)
+
+
+# Mutating tools that act on an existing card. If we can't find the card the
+# speaker named, they're talking about something new -> create it (see below).
+_NEEDS_CARD = ("start", "complete", "reverse")
 
 
 # --- DISPATCH TABLE: tool name -> board function (now owner-aware) ----------
 def _dispatch(a: Action, owner: int) -> dict:
     tid = board.resolve_id(a.task, owner) if a.task else None
+
+    # Bug fix: a child can name a chore the board doesn't have yet — e.g. says
+    # "양치 했어" but has no 양치 card. Don't fail with "no card"; add it to
+    # 할 일 (To-do) so the suggested phrases always do something useful.
+    if a.tool in _NEEDS_CARD and tid is None:
+        subject = a.subject or a.task or "새 할 일"
+        return board.register_task(owner, subject, a.english or "",
+                                   verb=a.verb or board.infer_verb(subject))
+
     if a.tool == "register":
-        return board.register_task(owner, a.subject or a.task or "새 할 일",
-                                   a.english or "", verb=a.verb or "하다")
+        subject = a.subject or a.task or "새 할 일"
+        return board.register_task(owner, subject, a.english or "",
+                                   verb=a.verb or board.infer_verb(subject))
     if a.tool == "start":
         return board.start_task(tid)
     if a.tool == "complete":
@@ -86,13 +101,20 @@ def rule_route(utterance: str, owner: int) -> Action:
     m = re.search(r"([1-5])\s*(점|star|stars|개)", text)
     if m:
         stars, tool = int(m.group(1)), "rate"
-    subject = None
-    if tool == "register" and not task:
-        cleaned = utterance
-        for k in sum((kws for _, kws in _RULES), []):
-            cleaned = re.sub(k, "", cleaned, flags=re.IGNORECASE)
-        subject = cleaned.strip(" 해줘을를.!?") or utterance
-    return Action(tool=tool, task=task, stars=stars, subject=subject)
+    # Derive a bare-noun subject + a verb whenever no existing card matched, so
+    # both 'register' and the auto-create fallback (e.g. "양치 했어" with no card)
+    # land a clean card. Strip rule keywords AND verb conjugations from the noun.
+    subject, verb = None, None
+    if not task:
+        cleaned = board.normalize(utterance)
+        noise = sum((kws for _, kws in _RULES), [])
+        noise += [forms[col].rstrip("!") for forms in board.VERBS.values()
+                  for col in board.COLUMNS]
+        for k in sorted(noise, key=len, reverse=True):   # longest first
+            cleaned = re.sub(re.escape(k), "", cleaned, flags=re.IGNORECASE)
+        subject = cleaned.strip(" 해줘을를.!?") or board.normalize(utterance)
+        verb = board.infer_verb(utterance)
+    return Action(tool=tool, task=task, stars=stars, subject=subject, verb=verb)
 
 
 # --- Router 2: Gemini structured output -------------------------------------

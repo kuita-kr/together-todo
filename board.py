@@ -45,6 +45,11 @@ GLOSSARY: dict[str, str] = {
     "공부": "숙제", "책읽기": "책",
 }
 
+# --- Swappable prefixes: the prefix chip is recyclable, so a card can teach
+# "점심 메뉴 고르기" / "아침 메뉴 고르기" without making a whole new card. A card
+# carries its own `prefix_options`; this is the default group offered for meals.
+MEAL_PREFIXES = ["아침", "점심", "저녁"]
+
 # --- State -----------------------------------------------------------------
 _uid = itertools.count(1)
 _cid = itertools.count(1)
@@ -58,6 +63,29 @@ def add_user(name: str, age: int) -> dict:
     uid = next(_uid)
     users[uid] = {"id": uid, "name": name, "age": int(age)}
     return users[uid]
+
+
+def update_user(uid: int, name: str | None = None, age: int | None = None) -> dict | None:
+    """TOOL (parent): rename a child or correct their age."""
+    u = users.get(int(uid))
+    if not u:
+        return None
+    if name is not None and str(name).strip():
+        u["name"] = str(name).strip()
+    if age is not None:
+        u["age"] = int(age)
+    return u
+
+
+def delete_user(uid: int) -> bool:
+    """TOOL (parent): remove a child and all of their cards."""
+    uid = int(uid)
+    if uid not in users:
+        return False
+    for cid in [c["id"] for c in board.values() if c["owner"] == uid]:
+        del board[cid]
+    del users[uid]
+    return True
 
 
 # --- Composition: parts -> displayed / spoken Korean ------------------------
@@ -78,16 +106,41 @@ def spoken(card: dict) -> str:
 # --- TOOLS -----------------------------------------------------------------
 def register_task(owner: int, subject: str, english: str = "", verb: str = "하다",
                   prefix: str = "", kind: str = "binary",
-                  options: list[str] | None = None) -> dict:
+                  options: list[str] | None = None,
+                  prefix_options: list[str] | None = None) -> dict:
     """TOOL: create a card for a specific child, built from parts."""
     cid = next(_cid)
     board[cid] = {
         "id": cid, "owner": int(owner),
         "prefix": prefix, "subject": subject, "verb": verb,
         "english": english, "kind": kind, "options": options or [],
+        "prefix_options": prefix_options or [],
         "status": "todo", "stars": None, "choice": None,
     }
     return {"ok": True, "tool": "register", "card": _view(board[cid])}
+
+
+def set_prefix(task_id: int, prefix: str) -> dict:
+    """TOOL: swap a card's prefix chip (저녁 -> 점심) while subject+verb stay.
+    Keeps "메뉴 고르기" intact and just re-labels the meal."""
+    c = board.get(task_id)
+    if not c:
+        return {"ok": False, "error": f"no card {task_id}"}
+    c["prefix"] = str(prefix)
+    return {"ok": True, "tool": "set_prefix", "card": _view(c)}
+
+
+def infer_verb(text: str) -> str:
+    """Guess a card's verb from a spoken phrase by matching the conjugation
+    table — "책 읽었어" -> 읽다, "장난감 정리했어" -> 정리하다. Longest form wins
+    so 정리했어 beats 했어. Falls back to 하다."""
+    best, best_len = "하다", 0
+    for verb, forms in VERBS.items():
+        for col in COLUMNS:
+            form = forms[col].rstrip("!")
+            if form and form in text and len(form) > best_len:
+                best, best_len = verb, len(form)
+    return best
 
 
 def start_task(task_id: int) -> dict:
@@ -208,8 +261,9 @@ def _seed():
     # 8-year-old: includes a choice card composed from prefix + subject
     register_task(minjun["id"], "숙제", "Homework", verb="하다")
     register_task(minjun["id"], "책", "Read a book", verb="읽다")
-    register_task(minjun["id"], "메뉴", "Pick dinner", verb="고르다", prefix="저녁",
-                  kind="choice", options=["김밥 / Gimbap", "비빔밥 / Bibimbap", "카레 / Curry"])
+    register_task(minjun["id"], "메뉴", "Pick a meal", verb="고르다", prefix="저녁",
+                  kind="choice", options=["김밥 / Gimbap", "비빔밥 / Bibimbap", "카레 / Curry"],
+                  prefix_options=MEAL_PREFIXES)
 
 
 _seed()

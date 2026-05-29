@@ -26,9 +26,35 @@ def home():
     return FileResponse("static/index.html")
 
 
+class UserIn(BaseModel):
+    name: str
+    age: int
+
+
 @app.get("/users")
 def get_users():
     return board.list_users()
+
+
+@app.post("/users")
+def create_user(u: UserIn):
+    """Parent action: register a new child (name + age)."""
+    return board.add_user(u.name, u.age)
+
+
+@app.patch("/users/{uid}")
+def edit_user(uid: int, u: UserIn):
+    """Parent action: correct a child's name or age."""
+    updated = board.update_user(uid, u.name, u.age)
+    if not updated:
+        return {"ok": False, "error": f"no user {uid}"}
+    return updated
+
+
+@app.delete("/users/{uid}")
+def remove_user(uid: int):
+    """Parent action: remove a child and their cards."""
+    return {"ok": board.delete_user(uid)}
 
 
 @app.get("/board")
@@ -53,6 +79,7 @@ def tap(payload: dict):
         "complete": lambda: board.complete_task(tid, choice=payload.get("choice")),
         "reverse": lambda: board.reverse_task(tid),
         "rate": lambda: board.rate_task(tid, payload.get("stars", 3)),
+        "set_prefix": lambda: board.set_prefix(tid, payload.get("prefix", "")),
         "predict": lambda: board.predict_tasks(user),
     }.get(tool)
     result = fn() if fn else {"ok": False, "error": "unknown tool"}
