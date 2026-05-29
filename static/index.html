@@ -34,6 +34,7 @@
     padding:8px 16px; border:2px solid var(--ink); border-radius:999px; background:#fff; cursor:pointer}
   .users button.active{background:var(--ink); color:#fff}
   .users .age{font-size:.7rem; opacity:.7; font-family:'Noto Sans KR'}
+  .users button.manage{padding:8px 12px; border-style:dashed; background:#fff; opacity:.8}
 
   .board{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;
     max-width:1100px; margin:18px auto}
@@ -51,6 +52,9 @@
   .chips{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
   .chip{font-family:'Jua'; font-size:1.3rem; line-height:1; padding:6px 10px; border-radius:10px}
   .chip.prefix{background:#efe7d2}
+  .chip.prefix.swap{cursor:pointer; border:2px dashed #c9b27a; padding:4px 8px}
+  .chip.prefix.swap:active{transform:translateY(1px)}
+  .swapmark{font-size:.7rem; color:#a98c4a; margin-left:5px; vertical-align:middle}
   .chip.subject{background:#e3f3f8; color:var(--subject)}
   .chip.ending{background:#fdeecb; color:var(--ending)}     /* changes by column */
   .plus{color:#bdb6a3; font-size:1.1rem}
@@ -125,17 +129,68 @@ function renderUsers(){
     b.onclick=()=>{USER=u.id; load();};
     root.appendChild(b);
   }
+  // parent controls: edit the current child, or add a new one
+  const edit=document.createElement("button"); edit.className="manage"; edit.textContent="✏️";
+  edit.title="이름·나이 고치기 (부모)"; edit.onclick=editUser; root.appendChild(edit);
+  const add=document.createElement("button"); add.className="manage"; add.textContent="➕";
+  add.title="아이 추가 (부모)"; add.onclick=addUser; root.appendChild(add);
+}
+
+async function refreshUsers(preferId){
+  USERS=await (await fetch("/users")).json();
+  USER=(USERS.find(u=>u.id===preferId)||USERS[0]||{}).id ?? null;
+  if(USER==null){ document.getElementById("users").innerHTML=""; document.getElementById("board").innerHTML=""; addUser(); return; }
+  load();
+}
+
+function askAge(label,def){
+  const raw=prompt(label,def==null?"":def); if(raw===null) return null;
+  const n=parseInt(raw,10); return Number.isFinite(n)&&n>0?n:null;
+}
+
+async function addUser(){
+  const name=prompt("아이 이름 / Child's name");
+  if(!name||!name.trim()) return;
+  const age=askAge("나이 / Age",""); if(age==null) return;
+  const u=await (await fetch("/users",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:name.trim(),age})})).json();
+  refreshUsers(u.id);
+}
+
+async function editUser(){
+  const cur=USERS.find(u=>u.id===USER); if(!cur) return;
+  const name=prompt("이름 / Name (또는 '삭제'/'delete' 로 지우기)",cur.name);
+  if(name===null) return;
+  if(["삭제","delete"].includes(name.trim().toLowerCase())){
+    if(!confirm(`${cur.name} 삭제할까요? (카드도 함께 지워져요)`)) return;
+    await fetch("/users/"+USER,{method:"DELETE"}); refreshUsers(); return;
+  }
+  const age=askAge("나이 / Age",cur.age); if(age==null) return;
+  await fetch("/users/"+USER,{method:"PATCH",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:name.trim()||cur.name,age})});
+  refreshUsers(USER);
 }
 
 function cardEl(c,col){
   const el=document.createElement("div"); el.className="card";
   const p=c.parts;
   const chips=document.createElement("div"); chips.className="chips";
-  if(p.prefix){chips.innerHTML+=`<span class="chip prefix">${p.prefix}</span><span class="plus">+</span>`;}
+  const swappable=(c.prefix_options||[]).length>0;
+  if(p.prefix){
+    const swap=swappable?" swap":"";
+    const hint=swappable?`<span class="swapmark">⇄</span>`:"";
+    chips.innerHTML+=`<span class="chip prefix${swap}" title="${swappable?'눌러서 바꾸기':''}">${p.prefix}${hint}</span><span class="plus">+</span>`;
+  }
   chips.innerHTML+=`<span class="chip subject">${p.subject}</span>`;
   if(p.ending){chips.innerHTML+=`<span class="plus">+</span><span class="chip ending">${p.ending}</span>`;}
   chips.innerHTML+=`<button class="speak" title="읽어주기">🔊</button>`;
   el.appendChild(chips);
+  if(swappable){               // tap the prefix chip to swap 저녁 -> 점심 -> 아침
+    el.querySelector(".chip.prefix").onclick=()=>{
+      const opts=c.prefix_options, i=opts.indexOf(c.prefix);
+      tap("set_prefix",c.id,{prefix:opts[(i+1)%opts.length]});
+    };
+  }
   const stars=c.stars?` <span class="stars">${"★".repeat(c.stars)}</span>`:"";
   el.insertAdjacentHTML("beforeend",`<div class="en">${c.english||""}${stars}</div>`);
   el.querySelector(".speak").onclick=()=>speak(c.spoken);
@@ -206,7 +261,7 @@ if(SR){const rec=new SR(); rec.lang="ko-KR"; mic.onclick=()=>rec.start();
 speechSynthesis && (speechSynthesis.onvoiceschanged=()=>{});
 
 // boot: load users, default to first child
-fetch("/users").then(r=>r.json()).then(us=>{USERS=us; USER=us[0].id; load();});
+refreshUsers();
 </script>
 </body>
 </html>
