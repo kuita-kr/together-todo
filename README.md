@@ -7,7 +7,7 @@ parent mode** for running the day. Built to internalise one pattern:
 
 | Kids' board | Parent mode (PIN-gated) |
 |---|---|
-| ![The kid-facing board — cards conjugate by column](assets/v3-child.png) | ![Parent mode — menu memory, word bag, task bag](assets/v3-parent.png) |
+| ![The kid-facing board — cards conjugate by column](img/v3-child.png) | ![Parent mode — menu memory, word bag, task bag](img/v3-parent.png) |
 
 ## What's new in v3 — parent mode
 
